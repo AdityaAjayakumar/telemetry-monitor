@@ -74,6 +74,82 @@ impl Preset {
     }
 }
 
+/// Build a preset string like "Tr1-8, Pr1-8:2" from channel names seen
+/// in live data ("Tr1", "Pr1", "Pr1.2", ...).
+pub fn spec_from_names(names: &[String]) -> String {
+    // 1) base name -> how many values per line were seen
+    let mut bases: Vec<(String, usize)> = Vec::new();
+    for n in names {
+        let (base, k) = match n.rsplit_once('.') {
+            Some((b, k)) if k.parse::<usize>().map_or(false, |k| k >= 2) => {
+                (b.to_string(), k.parse::<usize>().unwrap_or(2))
+            }
+            _ => (n.clone(), 1),
+        };
+        if let Some(i) = bases.iter().position(|(b, _)| *b == base) {
+            bases[i].1 = bases[i].1.max(k);
+        } else {
+            bases.push((base, k));
+        }
+    }
+
+    // 2) group by prefix: (prefix, numbers, values per line)
+    let mut groups: Vec<(String, Vec<u32>, usize)> = Vec::new();
+    let mut bare: Vec<String> = Vec::new();
+    for (base, nv) in &bases {
+        let cut = base
+            .find(|c: char| c.is_ascii_digit())
+            .unwrap_or(base.len());
+        let (prefix, num) = base.split_at(cut);
+        match num.parse::<u32>() {
+            Ok(n) if !prefix.is_empty() => {
+                let g = match groups.iter().position(|(p, _, _)| p.as_str() == prefix) {
+                    Some(i) => i,
+                    None => {
+                        groups.push((prefix.to_string(), vec![], 1));
+                        groups.len() - 1
+                    }
+                };
+                groups[g].1.push(n);
+                groups[g].2 = groups[g].2.max(*nv);
+            }
+            _ => {
+                // names with no digits can be expressed; others cannot
+                if !base.chars().any(|c| c.is_ascii_digit()) {
+                    bare.push(if *nv > 1 {
+                        format!("{base}:{nv}")
+                    } else {
+                        base.clone()
+                    });
+                }
+            }
+        }
+    }
+
+    // 3) compress runs of numbers into ranges
+    let mut out: Vec<String> = Vec::new();
+    for (prefix, mut nums, nv) in groups {
+        nums.sort_unstable();
+        nums.dedup();
+        let suffix = if nv > 1 { format!(":{nv}") } else { String::new() };
+        let mut i = 0;
+        while i < nums.len() {
+            let mut j = i;
+            while j + 1 < nums.len() && nums[j + 1] == nums[j] + 1 {
+                j += 1;
+            }
+            if j == i {
+                out.push(format!("{prefix}{}{suffix}", nums[i]));
+            } else {
+                out.push(format!("{prefix}{}-{}{suffix}", nums[i], nums[j]));
+            }
+            i = j + 1;
+        }
+    }
+    out.extend(bare);
+    out.join(", ")
+}
+
 // ---- saved presets: one "name=spec" per line ----
 
 fn path() -> PathBuf {

@@ -169,9 +169,8 @@ export component AppWindow inherits Window {
     in property <[string]> groups;
 
     // ---- settings read by Rust ----
-    in-out property <int> view-mode: 0;   // 0 monitor, 1 line, 2 box, 3 candle
+    in-out property <int> view-mode: 0;   // 0 monitor, 1 line, 2 box
     in-out property <int> window-s: 30;
-    in-out property <int> bucket-s: 1;
     in-out property <bool> autoscroll: true;
     in-out property <string> preset-name;
     in-out property <string> preset-spec: "Tr1-8, Pr1-8:2, Acc1-9";
@@ -205,6 +204,7 @@ export component AppWindow inherits Window {
     callback save-preset(string, string);
     callback delete-preset(string);
     callback free-mode();
+    callback detect-preset(bool);
 
     public function scroll-bottom() {
         lv.content-y = Math.min(0px, lv.visible-height - lv.content-height);
@@ -346,9 +346,9 @@ export component AppWindow inherits Window {
                     Field {
                         label: "Mode";
                         horizontal-stretch: 0;
-                        preferred-width: 420px;
+                        preferred-width: 330px;
                         Segmented {
-                            items: ["Monitor", "Line", "Box & whisker", "Candle"];
+                            items: ["Monitor", "Line", "Box & whisker"];
                             current <=> root.view-mode;
                         }
                     }
@@ -360,16 +360,6 @@ export component AppWindow inherits Window {
                             value <=> root.window-s;
                             minimum: 1;
                             maximum: 3600;
-                        }
-                    }
-                    Field {
-                        label: "Candle bucket (s)";
-                        horizontal-stretch: 0;
-                        preferred-width: 130px;
-                        SpinBox {
-                            value <=> root.bucket-s;
-                            minimum: 1;
-                            maximum: 600;
                         }
                     }
                     Rectangle { horizontal-stretch: 1; }
@@ -495,6 +485,12 @@ export component AppWindow inherits Window {
                             text: "Free";
                             clicked => { root.free-mode(); }
                         }
+                        Btn {
+                            text: "Detect";
+                            tint: Theme.accent;
+                            fg: #0b1220;
+                            clicked => { root.detect-preset(root.strict); }
+                        }
                         Rectangle { horizontal-stretch: 1; }
                         CheckBox {
                             text: "Strict";
@@ -592,7 +588,7 @@ export component AppWindow inherits Window {
                         stroke-width: 1.5px;
                     }
 
-                    // box / candle bars
+                    // box & whisker
                     for b in root.bars : Rectangle {
                         x: 0px;
                         y: 0px;
@@ -614,7 +610,7 @@ export component AppWindow inherits Window {
                             background: b.color;
                             border-radius: 2px;
                         }
-                        Rectangle {   // median line (box mode only)
+                        Rectangle {   // median line
                             visible: b.y-mid >= 0;
                             x: (b.x - b.w / 2) * 1px;
                             y: b.y-mid * 1px;

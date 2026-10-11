@@ -367,6 +367,65 @@ fn main() -> Result<(), slint::PlatformError> {
             preset_names.set_vec(names_of(&a.presets));
         }
     });
+        ui.on_detect_preset({
+        let app = app.clone();
+        let shared = shared_preset.clone();
+        let groups = groups.clone();
+        let weak = ui.as_weak();
+        move |strict| {
+            let Some(ui) = weak.upgrade() else { return };
+            // start listening with no filtering
+            {
+                let mut a = app.borrow_mut();
+                a.store.clear();
+                a.hidden.clear();
+            }
+            *shared.write().unwrap() = preset::Preset::default();
+            groups.set_vec(Vec::<SharedString>::new());
+            ui.set_status("Learning channels from live data (4 s)...".into());
+
+            // after 4 seconds, build the preset from what arrived
+            Timer::single_shot(Duration::from_secs(4), {
+                let app = app.clone();
+                let shared = shared.clone();
+                let groups = groups.clone();
+                let weak = weak.clone();
+                move || {
+                    let Some(ui) = weak.upgrade() else { return };
+                    let mut a = app.borrow_mut();
+                    let names: Vec<String> = a
+                        .store
+                        .series
+                        .iter()
+                        .filter(|s| s.pts.len() >= 2)
+                        .map(|s| s.name.clone())
+                        .collect();
+                    let spec = preset::spec_from_names(&names);
+                    if spec.is_empty() {
+                        ui.set_status(
+                            "Nothing detected: connect first and make sure data is flowing"
+                                .into(),
+                        );
+                        return;
+                    }
+                    match preset::Preset::parse(&spec, strict) {
+                        Ok(p) => {
+                            a.store.clear();
+                            a.hidden.clear();
+                            a.store.register(&p.names);
+                            let g: Vec<SharedString> =
+                                p.groups.iter().map(|g| g.as_str().into()).collect();
+                            groups.set_vec(g);
+                            *shared.write().unwrap() = p;
+                            ui.set_preset_spec(spec.clone().into());
+                            ui.set_status(format!("Detected: {spec}").into());
+                        }
+                        Err(e) => ui.set_status(format!("Detect failed: {e}").into()),
+                    }
+                }
+            });
+        }
+    });
 
     // ---- 30 Hz UI tick: drain -> store -> redraw ----
     let timer = Timer::default();
@@ -401,16 +460,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            // empty list = plot every channel; hiding is done via the
-            // checklist (a.hidden)
-            let pats: Vec<String> = Vec::new();
+            // everything is plotted; hide channels with the side checklist
             let win = ui.get_window_s().max(1) as f64;
-            let bucket = ui.get_bucket_s().max(1) as f64;
             let (w, h) = (ui.get_plot_w(), ui.get_plot_h());
             let f = match mode {
-                1 => plot::lines(&a.store, &pats, &a.hidden, win, w, h),
-                2 => plot::boxes(&a.store, &pats, &a.hidden, win, w, h),
-                _ => plot::candles(&a.store, &pats, &a.hidden, win, bucket, w, h),
+                1 => plot::lines(&a.store, &a.hidden, win, w, h),
+                _ => plot::boxes(&a.store, &a.hidden, win, w, h),
             };
             update(&traces, f.traces);
             update(&bars, f.bars);

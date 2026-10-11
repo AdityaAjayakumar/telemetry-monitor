@@ -1,7 +1,10 @@
 use crate::store::{Series, Store};
 use crate::{Bar, Trace};
 use slint::Color;
-use std::{collections::{HashSet, VecDeque}, fmt::Write};
+use std::{
+    collections::{HashSet, VecDeque},
+    fmt::Write,
+};
 
 #[derive(Default)]
 pub struct Frame {
@@ -9,24 +12,6 @@ pub struct Frame {
     pub bars: Vec<Bar>,
     pub y_top: String,
     pub y_bot: String,
-}
-
-pub fn parse_patterns(s: &str) -> Vec<String> {
-    s.split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|t| !t.is_empty())
-        .map(|t| t.to_lowercase())
-        .collect()
-}
-
-fn matches(p: &[String], name: &str) -> bool {
-    if p.is_empty() {
-        return true;
-    }
-    let n = name.to_lowercase();
-    p.iter().any(|x| match x.strip_suffix('*') {
-        Some(pre) => n.starts_with(pre),
-        None => *x == n,
-    })
 }
 
 fn nat_key(name: &str) -> (String, u32) {
@@ -91,8 +76,12 @@ fn decimate(
             mn = (idx, v);
             mx = (idx, v);
         } else {
-            if v < mn.1 { mn = (idx, v); }
-            if v > mx.1 { mx = (idx, v); }
+            if v < mn.1 {
+                mn = (idx, v);
+            }
+            if v > mx.1 {
+                mx = (idx, v);
+            }
         }
         idx += 1;
     }
@@ -100,18 +89,14 @@ fn decimate(
     out
 }
 
-fn ordered<'a>(store: &'a Store, pats: &[String]) -> Vec<(usize, &'a Series)> {
-    let mut v: Vec<_> = store
-        .series
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| matches(pats, &s.name))
-        .collect();
+fn ordered(store: &Store) -> Vec<(usize, &Series)> {
+    let mut v: Vec<_> = store.series.iter().enumerate().collect();
     if !store.keep_order {
         v.sort_by_key(|(_, s)| nat_key(&s.name));
     }
     v
 }
+
 fn range_or_default(lo: f64, hi: f64) -> (f64, f64) {
     let (mut lo, mut hi) = if lo > hi { (0.0, 1.0) } else { (lo, hi) };
     if (hi - lo).abs() < 1e-9 {
@@ -135,13 +120,16 @@ fn legend(list: &[(usize, &Series)], hidden: &HashSet<String>) -> Vec<Trace> {
 }
 
 pub fn lines(
-    store: &Store, pats: &[String], hidden: &HashSet<String>,
-    window: f64, w: f32, h: f32,
+    store: &Store,
+    hidden: &HashSet<String>,
+    window: f64,
+    w: f32,
+    h: f32,
 ) -> Frame {
     let t1 = store.t_max();
     let t0 = t1 - window;
     let cols = (w.max(50.0)) as usize;
-    let list = ordered(store, pats);
+    let list = ordered(store);
     let (mut lo, mut hi) = (f64::MAX, f64::MIN);
     let mut data = Vec::new();
     for (_, s) in &list {
@@ -162,71 +150,45 @@ pub fn lines(
     for (tr, d) in traces.iter_mut().zip(&data) {
         let mut cmd = String::with_capacity(d.len() * 12);
         for (k, (x, v)) in d.iter().enumerate() {
-            let _ = write!(cmd, "{}{:.1} {:.1} ", if k == 0 { "M" } else { "L" }, x, ymap(*v));
+            let _ = write!(
+                cmd,
+                "{}{:.1} {:.1} ",
+                if k == 0 { "M" } else { "L" },
+                x,
+                ymap(*v)
+            );
         }
         tr.commands = cmd.into();
     }
-    Frame { traces, bars: vec![], y_top: format!("{hi:.2}"), y_bot: format!("{lo:.2}") }
-}
-
-pub fn candles(
-    store: &Store, pats: &[String], hidden: &HashSet<String>,
-    window: f64, bucket: f64, w: f32, h: f32,
-) -> Frame {
-    let t1 = store.t_max();
-    let t0 = t1 - window;
-    let list = ordered(store, pats);
-    let mut f = Frame { traces: legend(&list, hidden), ..Default::default() };
-    let Some((_, s)) = list.iter().find(|(_, s)| !hidden.contains(&s.name)) else {
-        return f;
-    };
-    let bucket = bucket.max(window / 300.0);
-    let n = (window / bucket).ceil() as usize + 1;
-    let mut b: Vec<Option<(f64, f64, f64, f64)>> = vec![None; n]; // o,c,hi,lo
-    let start = s.pts.partition_point(|p| p.0 < t0);
-    for &(t, v) in s.pts.range(start..) {
-        let k = (((t - t0) / bucket) as usize).min(n - 1);
-        match &mut b[k] {
-            None => b[k] = Some((v, v, v, v)),
-            Some(x) => { x.1 = v; x.2 = x.2.max(v); x.3 = x.3.min(v); }
-        }
+    Frame {
+        traces,
+        bars: vec![],
+        y_top: format!("{hi:.2}"),
+        y_bot: format!("{lo:.2}"),
     }
-    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-    for x in b.iter().flatten() { lo = lo.min(x.3); hi = hi.max(x.2); }
-    let (lo, hi) = range_or_default(lo, hi);
-    let ymap = |v: f64| ((1.0 - (v - lo) / (hi - lo)) as f32) * h;
-    let slot = w / n as f32;
-    for (k, x) in b.iter().enumerate() {
-        if let Some((o, c, hh, ll)) = x {
-            let up = c >= o;
-            f.bars.push(Bar {
-                x: (k as f32 + 0.5) * slot, w: (slot * 0.7).max(1.0),
-                y_lo: ymap(*ll), y_hi: ymap(*hh),
-                y_a: ymap(*o), y_b: ymap(*c), y_mid: -1.0,
-                color: if up { Color::from_rgb_u8(80, 200, 120) }
-                       else { Color::from_rgb_u8(230, 80, 80) },
-                label: Default::default(),
-            });
-        }
-    }
-    f.y_top = format!("{hi:.2}");
-    f.y_bot = format!("{lo:.2}");
-    f
 }
 
 pub fn boxes(
-    store: &Store, pats: &[String], hidden: &HashSet<String>,
-    window: f64, w: f32, h: f32,
+    store: &Store,
+    hidden: &HashSet<String>,
+    window: f64,
+    w: f32,
+    h: f32,
 ) -> Frame {
     let t1 = store.t_max();
     let t0 = t1 - window;
-    let list = ordered(store, pats);
-    let mut f = Frame { traces: legend(&list, hidden), ..Default::default() };
-    let mut stats = Vec::new(); // (idx, name, min,q1,med,q3,max)
+    let list = ordered(store);
+    let mut f = Frame {
+        traces: legend(&list, hidden),
+        ..Default::default()
+    };
+    let mut stats = Vec::new(); // (idx, name, min, q1, med, q3, max)
     for (i, s) in list.iter().filter(|(_, s)| !hidden.contains(&s.name)) {
         let start = s.pts.partition_point(|p| p.0 < t0);
         let len = s.pts.len() - start;
-        if len == 0 { continue; }
+        if len == 0 {
+            continue;
+        }
         let step = (len / 4000).max(1);
         let mut v: Vec<f64> = s.pts.range(start..).step_by(step).map(|p| p.1).collect();
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -234,15 +196,24 @@ pub fn boxes(
         stats.push((*i, s.name.clone(), q(0.0), q(0.25), q(0.5), q(0.75), q(1.0)));
     }
     let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-    for s in &stats { lo = lo.min(s.2); hi = hi.max(s.6); }
+    for s in &stats {
+        lo = lo.min(s.2);
+        hi = hi.max(s.6);
+    }
     let (lo, hi) = range_or_default(lo, hi);
     let ymap = |v: f64| ((1.0 - (v - lo) / (hi - lo)) as f32) * h;
     let slot = w / stats.len().max(1) as f32;
     for (k, (i, name, mn, q1, md, q3, mx)) in stats.iter().enumerate() {
         f.bars.push(Bar {
-            x: (k as f32 + 0.5) * slot, w: (slot * 0.6).clamp(4.0, 60.0),
-            y_lo: ymap(*mn), y_hi: ymap(*mx), y_a: ymap(*q3), y_b: ymap(*q1),
-            y_mid: ymap(*md), color: color(*i), label: name.clone().into(),
+            x: (k as f32 + 0.5) * slot,
+            w: (slot * 0.6).clamp(4.0, 60.0),
+            y_lo: ymap(*mn),
+            y_hi: ymap(*mx),
+            y_a: ymap(*q3),
+            y_b: ymap(*q1),
+            y_mid: ymap(*md),
+            color: color(*i),
+            label: name.clone().into(),
         });
     }
     f.y_top = format!("{hi:.2}");
