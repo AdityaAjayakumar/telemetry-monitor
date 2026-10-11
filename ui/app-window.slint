@@ -1,54 +1,61 @@
-import { ComboBox, LineEdit, ListView, SpinBox, CheckBox }
-    from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 
 // ================= THEME (edit colours here) =================
 global Theme {
-    out property <color> bg: #0e1117;
-    out property <color> panel: #161b22;
-    out property <color> panel-2: #1f2630;
-    out property <color> border: #2a313c;
-    out property <color> accent: #4f9dff;
-    out property <color> text: #e6edf3;
-    out property <color> muted: #8b949e;
-    out property <color> danger: #f85149;
-    out property <color> good: #3fb950;
+    out property <color> bg: #0b0e11;
+    out property <color> surface: #10151a;
+    out property <color> raised: #171d24;
+    out property <color> line: #222a31;
+    out property <color> text: #dfe5ea;
+    out property <color> muted: #66737d;
+    out property <color> accent: #f0a830;
+    out property <color> danger: #e5534b;
+    out property <color> good: #4cc38a;
+    // Windows: "Consolas"   Debian: "DejaVu Sans Mono"
+    out property <string> mono: "Consolas";
 }
 
 export struct Trace {
-    name: string, color: color, visible: bool, commands: string
+    name: string, color: color, visible: bool, commands: string, value: string
 }
 export struct Bar {
     x: float, w: float, y-lo: float, y-hi: float,
     y-a: float, y-b: float, y-mid: float, color: color, label: string
 }
 
-// ================= SMALL REUSABLE PARTS =================
+// ================= PARTS =================
 component Btn inherits Rectangle {
     in property <string> text;
-    in property <color> tint: Theme.panel-2;
-    in property <color> fg: Theme.text;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> grow: false;
     callback clicked();
 
-    height: 32px;
-    border-radius: 6px;
+    height: 30px;
+    border-radius: 2px;
     border-width: 1px;
-    border-color: ta.has-hover ? Theme.accent : Theme.border;
-    background: ta.pressed ? root.tint.darker(0.2)
-        : (ta.has-hover ? root.tint.brighter(0.15) : root.tint);
-    animate background { duration: 120ms; }
-    min-width: label.preferred-width + 28px;
-    preferred-width: label.preferred-width + 28px;
-    horizontal-stretch: 0;
+    border-color: root.primary ? Theme.accent
+        : (root.danger ? Theme.danger
+        : (ta.has-hover ? Theme.muted : Theme.line));
+    background: root.primary
+        ? (ta.pressed ? Theme.accent.darker(0.25)
+            : (ta.has-hover ? Theme.accent.brighter(0.12) : Theme.accent))
+        : (ta.pressed ? Theme.line
+            : (ta.has-hover ? Theme.raised : transparent));
+    min-width: label.preferred-width + 24px;
+    preferred-width: label.preferred-width + 24px;
+    horizontal-stretch: root.grow ? 1 : 0;
 
     label := Text {
         text: root.text;
-        color: root.fg;
-        font-size: 13px;
-        font-weight: 600;
         width: parent.width;
         height: parent.height;
         horizontal-alignment: center;
         vertical-alignment: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: root.primary ? #14100a
+            : (root.danger ? Theme.danger : Theme.text);
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
@@ -60,23 +67,24 @@ component Chip inherits Rectangle {
     in property <string> text;
     callback clicked();
 
-    height: 26px;
-    border-radius: 13px;
+    height: 24px;
+    border-radius: 2px;
     border-width: 1px;
-    border-color: ta.has-hover ? Theme.accent : Theme.border;
-    background: ta.has-hover ? Theme.panel-2 : Theme.bg;
-    min-width: label.preferred-width + 24px;
-    preferred-width: label.preferred-width + 24px;
+    border-color: ta.has-hover ? Theme.accent : Theme.line;
+    background: ta.has-hover ? Theme.raised : transparent;
+    min-width: label.preferred-width + 20px;
+    preferred-width: label.preferred-width + 20px;
     horizontal-stretch: 0;
 
     label := Text {
         text: root.text;
-        color: Theme.text;
-        font-size: 12px;
         width: parent.width;
         height: parent.height;
         horizontal-alignment: center;
         vertical-alignment: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: ta.has-hover ? Theme.accent : Theme.text;
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
@@ -84,32 +92,190 @@ component Chip inherits Rectangle {
     }
 }
 
+component Check inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    height: 24px;
+    min-width: 24px + lab.preferred-width;
+
+    Rectangle {
+        x: 0px;
+        y: (parent.height - 14px) / 2;
+        width: 14px;
+        height: 14px;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.checked ? Theme.accent : Theme.muted;
+        background: root.checked ? Theme.accent : transparent;
+        Path {
+            visible: root.checked;
+            x: 1px;
+            y: 1px;
+            width: 12px;
+            height: 12px;
+            viewbox-width: 16;
+            viewbox-height: 16;
+            commands: "M 3 8 L 6.5 11.5 L 13 4.5";
+            stroke: #14100a;
+            stroke-width: 2.5px;
+        }
+    }
+    lab := Text {
+        x: 24px;
+        width: parent.width - 24px;
+        height: parent.height;
+        vertical-alignment: center;
+        text: root.text;
+        color: Theme.text;
+        font-size: 13px;
+    }
+    TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { root.checked = !root.checked; }
+    }
+}
+
+component TextBox inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+
+    height: 30px;
+    background: Theme.bg;
+    border-width: 1px;
+    border-radius: 2px;
+    border-color: ti.has-focus ? Theme.accent : Theme.line;
+
+    ti := TextInput {
+        x: 8px;
+        y: (parent.height - 20px) / 2;
+        width: parent.width - 16px;
+        height: 20px;
+        text <=> root.text;
+        font-size: 13px;
+        font-family: Theme.mono;
+        color: Theme.text;
+        selection-background-color: Theme.accent;
+        selection-foreground-color: #14100a;
+    }
+    Text {
+        visible: root.text == "";
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        vertical-alignment: center;
+        text: root.placeholder;
+        font-size: 13px;
+        font-family: Theme.mono;
+        color: Theme.muted;
+        overflow: elide;
+    }
+}
+
+component Select inherits Rectangle {
+    in property <[string]> model;
+    in-out property <int> current-index: -1;
+    in property <string> placeholder: "select";
+    callback selected(string);
+
+    height: 30px;
+    background: Theme.bg;
+    border-width: 1px;
+    border-radius: 2px;
+    border-color: ta.has-hover ? Theme.accent : Theme.line;
+
+    Text {
+        x: 8px;
+        width: parent.width - 30px;
+        height: parent.height;
+        vertical-alignment: center;
+        font-size: 13px;
+        overflow: elide;
+        text: (root.current-index >= 0 && root.current-index < root.model.length)
+            ? root.model[root.current-index] : root.placeholder;
+        color: (root.current-index >= 0 && root.current-index < root.model.length)
+            ? Theme.text : Theme.muted;
+    }
+    Path {
+        x: parent.width - 20px;
+        y: (parent.height - 6px) / 2;
+        width: 10px;
+        height: 6px;
+        viewbox-width: 10;
+        viewbox-height: 6;
+        commands: "M 1 1 L 5 5 L 9 1";
+        stroke: Theme.muted;
+        stroke-width: 1.5px;
+    }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 2px;
+        width: root.width;
+        height: Math.min(root.model.length, 8) * 28px + 2px;
+        Rectangle {
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.line;
+            VerticalLayout {
+                for it[i] in root.model : Rectangle {
+                    height: 28px;
+                    background: pta.has-hover ? Theme.line : transparent;
+                    Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        text: it;
+                        font-size: 13px;
+                        overflow: elide;
+                        color: i == root.current-index ? Theme.accent : Theme.text;
+                    }
+                    pta := TouchArea {
+                        clicked => {
+                            root.current-index = i;
+                            root.selected(it);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 component Segmented inherits Rectangle {
     in property <[string]> items;
     in-out property <int> current;
 
-    height: 32px;
+    height: 30px;
     background: Theme.bg;
-    border-radius: 8px;
     border-width: 1px;
-    border-color: Theme.border;
+    border-radius: 2px;
+    border-color: Theme.line;
 
     HorizontalLayout {
-        padding: 2px;
-        spacing: 2px;
         for it[i] in root.items : Rectangle {
-            border-radius: 6px;
-            background: i == root.current ? Theme.accent
-                : (ta.has-hover ? Theme.panel-2 : transparent);
+            background: i == root.current ? Theme.raised
+                : (ta.has-hover ? Theme.surface : transparent);
             Text {
                 text: it;
-                font-size: 13px;
-                font-weight: 600;
                 width: parent.width;
                 height: parent.height;
                 horizontal-alignment: center;
                 vertical-alignment: center;
-                color: i == root.current ? #0b1220 : Theme.text;
+                font-size: 12px;
+                font-weight: 600;
+                color: i == root.current ? Theme.accent : Theme.muted;
+            }
+            Rectangle {
+                visible: i == root.current;
+                x: 0px;
+                y: parent.height - 2px;
+                width: parent.width;
+                height: 2px;
+                background: Theme.accent;
             }
             ta := TouchArea {
                 mouse-cursor: MouseCursor.pointer;
@@ -119,41 +285,68 @@ component Segmented inherits Rectangle {
     }
 }
 
-component Card inherits Rectangle {
-    in property <string> title;
-    background: Theme.panel;
-    border-radius: 10px;
-    border-width: 1px;
-    border-color: Theme.border;
+component Tabs inherits Rectangle {
+    in property <[string]> items;
+    in-out property <int> current;
+    height: 34px;
 
-    VerticalLayout {
-        padding: 12px;
-        spacing: 8px;
-        Text {
-            text: root.title;
-            color: Theme.muted;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 1px;
+    Rectangle {
+        x: 0px;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.line;
+    }
+    HorizontalLayout {
+        for it[i] in root.items : Rectangle {
+            Text {
+                text: it;
+                width: parent.width;
+                height: parent.height;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                color: (i == root.current || ta.has-hover)
+                    ? Theme.text : Theme.muted;
+            }
+            Rectangle {
+                visible: i == root.current;
+                x: 0px;
+                y: parent.height - 2px;
+                width: parent.width;
+                height: 2px;
+                background: Theme.accent;
+            }
+            ta := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { root.current = i; }
+            }
         }
-        @children
     }
 }
 
-component Field inherits VerticalLayout {
+component Labeled inherits VerticalLayout {
     in property <string> label;
-    spacing: 3px;
-    Text { text: root.label; color: Theme.muted; font-size: 11px; }
+    spacing: 4px;
+    Text {
+        text: root.label;
+        color: Theme.muted;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+    }
     @children
 }
 
 // ================= MAIN WINDOW =================
 export component AppWindow inherits Window {
     title: "Telemetry Monitor";
-    preferred-width: 1100px;
+    preferred-width: 1180px;
     preferred-height: 760px;
-    min-width: 760px;
-    min-height: 480px;
+    min-width: 820px;
+    min-height: 520px;
     background: Theme.bg;
     default-font-size: 13px;
 
@@ -170,7 +363,9 @@ export component AppWindow inherits Window {
 
     // ---- settings read by Rust ----
     in-out property <int> view-mode: 0;   // 0 monitor, 1 line, 2 box
-    in-out property <int> window-s: 30;
+    in-out property <int> window-idx: 2;
+    property <[int]> window-vals: [5, 10, 30, 60, 120, 300, 600, 1800];
+    in-out property <int> window-s: window-vals[window-idx];
     in-out property <bool> autoscroll: true;
     in-out property <string> preset-name;
     in-out property <string> preset-spec: "Tr1-8, Pr1-8:2, Acc1-9";
@@ -178,14 +373,16 @@ export component AppWindow inherits Window {
     out property <length> plot-w: plot.width;
     out property <length> plot-h: plot.height;
 
-    // ---- UI-only state (kept when controls are hidden) ----
+    // ---- UI-only state ----
     in-out property <int> src-index: 0;
     in-out property <string> target-text: "";
-    in-out property <int> baud: 115200;
+    in-out property <int> baud-idx: 4;
+    property <[int]> baud-vals: [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
     in-out property <int> fmt-index: 0;
     in-out property <string> log-path: "telemetry_log";
     property <bool> show-panels: true;
-    property <length> side-w: 200px;
+    property <int> tab: 0;
+    property <length> side-w: 230px;
 
     // ---- callbacks to Rust ----
     callback connect(int, string, int);
@@ -211,538 +408,630 @@ export component AppWindow inherits Window {
     }
 
     VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
 
-        // ---------- header ----------
-        HorizontalLayout {
-            spacing: 10px;
-            Text {
-                text: "Telemetry Monitor";
-                font-size: 20px;
-                font-weight: 800;
-                color: Theme.text;
-                vertical-alignment: center;
-            }
-            Text {
-                text: "serial · tcp · live plots";
-                color: Theme.muted;
-                vertical-alignment: center;
-            }
-            Rectangle { horizontal-stretch: 1; }
+        // ================= header =================
+        Rectangle {
+            height: 48px;
+            background: Theme.surface;
             Rectangle {
-                max-width: 560px;
-                background: Theme.panel;
-                border-radius: 16px;
-                border-width: 1px;
-                border-color: Theme.border;
-                HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
+                x: 0px;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.line;
+            }
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                spacing: 10px;
+
+                Text {
+                    text: "TELEMETRY";
+                    font-family: Theme.mono;
+                    font-size: 13px;
+                    font-weight: 800;
+                    letter-spacing: 2px;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "MONITOR";
+                    font-family: Theme.mono;
+                    font-size: 13px;
+                    font-weight: 800;
+                    letter-spacing: 2px;
+                    color: Theme.accent;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+
+                VerticalLayout {
+                    alignment: center;
+                    preferred-width: 290px;
+                    horizontal-stretch: 0;
+                    Segmented {
+                        items: ["Monitor", "Line", "Box & whisker"];
+                        current <=> root.view-mode;
+                    }
+                }
+                if root.view-mode != 0 : HorizontalLayout {
                     spacing: 8px;
-                    Rectangle {
-                        width: 8px;
-                        Rectangle {
-                            y: (parent.height - 8px) / 2;
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: Theme.accent;
+                    horizontal-stretch: 0;
+                    Text {
+                        text: "WINDOW";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 1.2px;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        preferred-width: 100px;
+                        Select {
+                            model: ["5 s", "10 s", "30 s", "1 min",
+                                "2 min", "5 min", "10 min", "30 min"];
+                            current-index <=> root.window-idx;
                         }
                     }
-                    Text {
-                        text: root.status;
-                        color: Theme.text;
-                        overflow: elide;
-                        vertical-alignment: center;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    Btn {
+                        text: root.show-panels ? "Hide panel" : "Show panel";
+                        clicked => { root.show-panels = !root.show-panels; }
                     }
                 }
             }
-            Btn {
-                text: root.show-panels ? "Hide controls" : "Show controls";
-                clicked => { root.show-panels = !root.show-panels; }
-            }
         }
 
-        // ---------- control cards ----------
-        if root.show-panels : VerticalLayout {
-            spacing: 10px;
+        // ================= body =================
+        HorizontalLayout {
 
-            // ---- connection ----
-            Card {
-                title: "CONNECTION";
-                HorizontalLayout {
-                    spacing: 8px;
-                    Field {
-                        label: "Source";
-                        horizontal-stretch: 0;
-                        preferred-width: 150px;
-                        ComboBox {
-                            model: ["Serial", "TCP server", "TCP client"];
-                            current-index <=> root.src-index;
-                        }
+            // ---------- sidebar ----------
+            if root.show-panels : Rectangle {
+                width: 300px;
+                background: Theme.surface;
+                Rectangle {
+                    x: parent.width - 1px;
+                    y: 0px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.line;
+                }
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 14px;
+
+                    Tabs {
+                        items: ["LINK", "LOG", "PRESET"];
+                        current <=> root.tab;
                     }
-                    Field {
-                        label: "Detected ports";
-                        horizontal-stretch: 0;
-                        preferred-width: 150px;
-                        ComboBox {
-                            model: root.ports;
-                            selected(v) => { root.target-text = v; }
+
+                    // ----- LINK -----
+                    if root.tab == 0 : VerticalLayout {
+                        spacing: 12px;
+                        Labeled {
+                            label: "SOURCE";
+                            Segmented {
+                                items: ["Serial", "TCP listen", "TCP client"];
+                                current <=> root.src-index;
+                            }
                         }
-                    }
-                    Field {
-                        label: "Target (COM3 or 0.0.0.0:5000)";
-                        horizontal-stretch: 1;
-                        LineEdit {
-                            text <=> root.target-text;
-                            placeholder-text: "COM3";
+                        Labeled {
+                            label: "DETECTED PORTS";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Select {
+                                    model: root.ports;
+                                    placeholder: "no ports found";
+                                    selected(v) => { root.target-text = v; }
+                                }
+                                Btn {
+                                    text: "Refresh";
+                                    clicked => { root.refresh-ports(); }
+                                }
+                            }
                         }
-                    }
-                    Field {
-                        label: "Baud";
-                        horizontal-stretch: 0;
-                        preferred-width: 150px;
-                        SpinBox {
-                            value <=> root.baud;
-                            minimum: 300;
-                            maximum: 4000000;
+                        Labeled {
+                            label: "TARGET";
+                            TextBox {
+                                text <=> root.target-text;
+                                placeholder: "COM3  or  0.0.0.0:5000";
+                            }
                         }
-                    }
-                    VerticalLayout {
-                        alignment: end;
-                        horizontal-stretch: 0;
+                        if root.src-index == 0 : Labeled {
+                            label: "BAUD";
+                            Select {
+                                model: ["9600", "19200", "38400", "57600",
+                                    "115200", "230400", "460800", "921600"];
+                                current-index <=> root.baud-idx;
+                            }
+                        }
                         HorizontalLayout {
-                            spacing: 6px;
+                            spacing: 8px;
                             Btn {
+                                grow: true;
+                                primary: true;
                                 text: "Connect";
-                                tint: Theme.accent;
-                                fg: #0b1220;
                                 clicked => {
                                     root.connect(root.src-index,
-                                        root.target-text, root.baud);
+                                        root.target-text,
+                                        root.baud-vals[root.baud-idx]);
                                 }
                             }
                             Btn {
+                                grow: true;
+                                danger: true;
                                 text: "Stop";
-                                tint: #2d1517;
-                                fg: Theme.danger;
                                 clicked => { root.disconnect(); }
                             }
+                        }
+                    }
+
+                    // ----- LOG -----
+                    if root.tab == 1 : VerticalLayout {
+                        spacing: 12px;
+                        Labeled {
+                            label: "FORMAT";
+                            Segmented {
+                                items: [".csv", ".txt", ".log"];
+                                current <=> root.fmt-index;
+                            }
+                        }
+                        Labeled {
+                            label: "FILE";
+                            HorizontalLayout {
+                                spacing: 6px;
+                                TextBox { text <=> root.log-path; }
+                                Btn {
+                                    text: "Browse…";
+                                    clicked => {
+                                        root.browse-log(root.fmt-index);
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
                             Btn {
-                                text: "Refresh";
-                                clicked => { root.refresh-ports(); }
+                                grow: true;
+                                primary: true;
+                                text: "Start log";
+                                clicked => {
+                                    root.start-log(root.fmt-index,
+                                        root.log-path);
+                                }
                             }
-                        }
-                    }
-                }
-            }
-
-            // ---- view ----
-            Card {
-                title: "VIEW";
-                HorizontalLayout {
-                    spacing: 10px;
-                    Field {
-                        label: "Mode";
-                        horizontal-stretch: 0;
-                        preferred-width: 330px;
-                        Segmented {
-                            items: ["Monitor", "Line", "Box & whisker"];
-                            current <=> root.view-mode;
-                        }
-                    }
-                    Field {
-                        label: "Window (s)";
-                        horizontal-stretch: 0;
-                        preferred-width: 130px;
-                        SpinBox {
-                            value <=> root.window-s;
-                            minimum: 1;
-                            maximum: 3600;
-                        }
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                }
-            }
-
-            // ---- logging + presets side by side ----
-            HorizontalLayout {
-                spacing: 10px;
-
-                Card {
-                    title: "LOGGING";
-                    horizontal-stretch: 2;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Field {
-                            label: "Format";
-                            horizontal-stretch: 0;
-                            preferred-width: 110px;
-                            ComboBox {
-                                model: [".csv", ".txt", ".log"];
-                                current-index <=> root.fmt-index;
-                            }
-                        }
-                        Field {
-                            label: "File name";
-                            horizontal-stretch: 1;
-                            LineEdit { text <=> root.log-path; }
-                        }
-                        VerticalLayout {
-                            alignment: end;
-                            horizontal-stretch: 0;
                             Btn {
-                                text: "Browse…";
-                                clicked => { root.browse-log(root.fmt-index); }
-                            }
-                        }
-                    }
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Btn {
-                            text: "Start log";
-                            tint: #11271a;
-                            fg: Theme.good;
-                            clicked => {
-                                root.start-log(root.fmt-index, root.log-path);
+                                grow: true;
+                                danger: true;
+                                text: "Stop log";
+                                clicked => { root.stop-log(); }
                             }
                         }
                         Btn {
-                            text: "Stop log";
-                            tint: #2d1517;
-                            fg: Theme.danger;
-                            clicked => { root.stop-log(); }
-                        }
-                        Btn {
-                            text: "Clear";
+                            text: "Clear plot data";
                             clicked => { root.clear(); }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                        CheckBox {
-                            text: "Autoscroll";
+                        Check {
+                            text: "Autoscroll monitor";
                             checked <=> root.autoscroll;
                         }
                     }
-                }
 
-                Card {
-                    title: "PRESETS  (expected channels)";
-                    horizontal-stretch: 3;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Field {
-                            label: "Saved";
-                            horizontal-stretch: 0;
-                            preferred-width: 150px;
-                            ComboBox {
+                    // ----- PRESET -----
+                    if root.tab == 2 : VerticalLayout {
+                        spacing: 12px;
+                        Labeled {
+                            label: "SAVED";
+                            Select {
                                 model: root.preset-names;
+                                placeholder: "choose preset";
                                 selected(v) => { root.select-preset(v); }
                             }
                         }
-                        Field {
-                            label: "Name";
-                            horizontal-stretch: 0;
-                            preferred-width: 120px;
-                            LineEdit {
+                        Labeled {
+                            label: "NAME";
+                            TextBox {
                                 text <=> root.preset-name;
-                                placeholder-text: "name";
+                                placeholder: "name";
                             }
                         }
-                        Field {
-                            label: "Channels";
-                            horizontal-stretch: 1;
-                            LineEdit {
+                        Labeled {
+                            label: "EXPECTED CHANNELS";
+                            TextBox {
                                 text <=> root.preset-spec;
-                                placeholder-text: "Tr1-7, Pr1-4:2, Acc1-9";
+                                placeholder: "Tr1-8, Pr1-8:2, Acc1-9";
                             }
-                        }
-                    }
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Btn {
-                            text: "Apply";
-                            tint: Theme.accent;
-                            fg: #0b1220;
-                            clicked => {
-                                root.apply-preset(root.preset-spec, root.strict);
-                            }
-                        }
-                        Btn {
-                            text: "Save";
-                            clicked => {
-                                root.save-preset(root.preset-name,
-                                    root.preset-spec);
-                            }
-                        }
-                        Btn {
-                            text: "Delete";
-                            tint: #2d1517;
-                            fg: Theme.danger;
-                            clicked => { root.delete-preset(root.preset-name); }
-                        }
-                        Btn {
-                            text: "Free";
-                            clicked => { root.free-mode(); }
-                        }
-                        Btn {
-                            text: "Detect";
-                            tint: Theme.accent;
-                            fg: #0b1220;
-                            clicked => { root.detect-preset(root.strict); }
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        CheckBox {
-                            text: "Strict";
-                            checked <=> root.strict;
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---------- main area: monitor OR plot ----------
-        Rectangle {
-            vertical-stretch: 1;
-            background: Theme.panel;
-            border-radius: 10px;
-            border-width: 1px;
-            border-color: Theme.border;
-            clip: true;
-
-            // --- raw monitor ---
-            lv := ListView {
-                visible: root.view-mode == 0;
-                x: 10px;
-                y: 8px;
-                width: parent.width - 20px;
-                height: parent.height - 16px;
-                for l in root.lines : Text {
-                    text: l;
-                    wrap: no-wrap;
-                    font-family: "Consolas";
-                    font-size: 12px;
-                    color: Theme.text;
-                }
-            }
-
-            // --- empty-state hints ---
-            Text {
-                visible: root.view-mode == 0 && root.lines.length == 0;
-                text: "No data yet. Pick a port, set the baud rate and press Connect.";
-                color: Theme.muted;
-                x: 0px;
-                y: 0px;
-                width: parent.width;
-                height: parent.height;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            Text {
-                visible: root.view-mode != 0 && root.traces.length == 0;
-                text: "Waiting for data. Apply a preset to see channels right away.";
-                color: Theme.muted;
-                x: 0px;
-                y: 0px;
-                width: parent.width - root.side-w - 20px;
-                height: parent.height;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            // --- plot modes ---
-            Rectangle {
-                visible: root.view-mode != 0;
-                x: 0px;
-                y: 0px;
-                width: parent.width;
-                height: parent.height;
-
-                plot := Rectangle {
-                    x: 10px;
-                    y: 10px;
-                    width: parent.width - root.side-w - 30px;
-                    height: parent.height - 20px;
-                    background: #0a0d12;
-                    border-radius: 8px;
-                    clip: true;
-
-                    // gridlines
-                    for i in 5 : Rectangle {
-                        x: 0px;
-                        y: Math.min(i * parent.height / 4, parent.height - 1px);
-                        width: parent.width;
-                        height: 1px;
-                        background: #1c2430;
-                    }
-
-                    // line traces
-                    for t in root.traces : Path {
-                        visible: t.visible && root.view-mode == 1;
-                        width: parent.width;
-                        height: parent.height;
-                        viewbox-width: self.width / 1px;
-                        viewbox-height: self.height / 1px;
-                        commands: t.commands;
-                        stroke: t.color;
-                        stroke-width: 1.5px;
-                    }
-
-                    // box & whisker
-                    for b in root.bars : Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        width: parent.width;
-                        height: parent.height;
-
-                        Rectangle {   // whisker
-                            x: b.x * 1px - 0.5px;
-                            y: b.y-hi * 1px;
-                            width: 1px;
-                            height: (b.y-lo - b.y-hi) * 1px;
-                            background: b.color;
-                        }
-                        Rectangle {   // body
-                            x: (b.x - b.w / 2) * 1px;
-                            y: Math.min(b.y-a, b.y-b) * 1px;
-                            width: b.w * 1px;
-                            height: Math.max(1, Math.abs(b.y-a - b.y-b)) * 1px;
-                            background: b.color;
-                            border-radius: 2px;
-                        }
-                        Rectangle {   // median line
-                            visible: b.y-mid >= 0;
-                            x: (b.x - b.w / 2) * 1px;
-                            y: b.y-mid * 1px;
-                            width: b.w * 1px;
-                            height: 2px;
-                            background: white;
                         }
                         Text {
-                            visible: b.label != "";
-                            text: b.label;
-                            x: (b.x - b.w / 2) * 1px;
-                            y: parent.height - 16px;
+                            text: "Name + range. :2 keeps 2 values per line.";
                             color: Theme.muted;
-                            font-size: 10px;
+                            font-size: 11px;
+                            wrap: word-wrap;
+                        }
+                        Check {
+                            text: "Strict (ignore unknown names)";
+                            checked <=> root.strict;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Btn {
+                                grow: true;
+                                primary: true;
+                                text: "Apply";
+                                clicked => {
+                                    root.apply-preset(root.preset-spec,
+                                        root.strict);
+                                }
+                            }
+                            Btn {
+                                grow: true;
+                                text: "Detect";
+                                clicked => { root.detect-preset(root.strict); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Btn {
+                                grow: true;
+                                text: "Save";
+                                clicked => {
+                                    root.save-preset(root.preset-name,
+                                        root.preset-spec);
+                                }
+                            }
+                            Btn {
+                                grow: true;
+                                danger: true;
+                                text: "Delete";
+                                clicked => {
+                                    root.delete-preset(root.preset-name);
+                                }
+                            }
+                            Btn {
+                                grow: true;
+                                text: "Free";
+                                clicked => { root.free-mode(); }
+                            }
                         }
                     }
 
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // ---------- main area ----------
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.bg;
+                clip: true;
+
+                // raw monitor
+                lv := ListView {
+                    visible: root.view-mode == 0;
+                    x: 14px;
+                    y: 10px;
+                    width: parent.width - 28px;
+                    height: parent.height - 20px;
+                    for l in root.lines : Text {
+                        text: l;
+                        wrap: no-wrap;
+                        font-family: Theme.mono;
+                        font-size: 12px;
+                        color: Theme.text;
+                    }
+                }
+
+                // empty states
+                Text {
+                    visible: root.view-mode == 0 && root.lines.length == 0;
+                    text: "NO DATA  ·  pick a port and press Connect";
+                    font-family: Theme.mono;
+                    font-size: 12px;
+                    color: Theme.muted;
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                Text {
+                    visible: root.view-mode != 0 && root.traces.length == 0;
+                    text: "WAITING FOR DATA  ·  or apply a preset";
+                    font-family: Theme.mono;
+                    font-size: 12px;
+                    color: Theme.muted;
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width - root.side-w - 28px;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                // plot modes
+                Rectangle {
+                    visible: root.view-mode != 0;
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+
+                    // y axis labels
                     Text {
                         text: root.y-top;
                         x: 6px;
-                        y: 4px;
-                        color: Theme.muted;
+                        y: plot.y - 7px;
+                        width: 50px;
+                        horizontal-alignment: right;
+                        font-family: Theme.mono;
                         font-size: 11px;
+                        color: Theme.muted;
                     }
                     Text {
                         text: root.y-bot;
                         x: 6px;
-                        y: parent.height - 18px;
-                        color: Theme.muted;
+                        y: plot.y + plot.height - 8px;
+                        width: 50px;
+                        horizontal-alignment: right;
+                        font-family: Theme.mono;
                         font-size: 11px;
+                        color: Theme.muted;
                     }
-                }
 
-                // ---------- side panel: channel checklist ----------
-                Rectangle {
-                    x: parent.width - root.side-w - 10px;
-                    y: 10px;
-                    width: root.side-w;
-                    height: parent.height - 20px;
-                    background: Theme.bg;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.border;
+                    plot := Rectangle {
+                        x: 62px;
+                        y: 14px;
+                        width: parent.width - 62px - root.side-w - 28px;
+                        height: parent.height - 48px;
+                        background: #090c0f;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        clip: true;
 
-                    VerticalLayout {
-                        padding: 10px;
-                        spacing: 8px;
-
-                        Text {
-                            text: "CHANNELS";
-                            color: Theme.muted;
-                            font-size: 11px;
-                            font-weight: 700;
-                            letter-spacing: 1px;
+                        // grid
+                        for i in 5 : Rectangle {
+                            x: 0px;
+                            y: Math.min(i * parent.height / 4, parent.height - 1px);
+                            width: parent.width;
+                            height: 1px;
+                            background: #141a20;
                         }
-                        HorizontalLayout {
-                            spacing: 6px;
-                            alignment: start;
-                            Chip { text: "All"; clicked => { root.show-all(); } }
-                            Chip { text: "None"; clicked => { root.hide-all(); } }
+                        for i in 7 : Rectangle {
+                            x: Math.min(i * parent.width / 6, parent.width - 1px);
+                            y: 0px;
+                            width: 1px;
+                            height: parent.height;
+                            background: #141a20;
                         }
-                        HorizontalLayout {
-                            spacing: 4px;
-                            alignment: start;
+
+                        // line traces
+                        for t in root.traces : Path {
+                            visible: t.visible && root.view-mode == 1;
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-width: self.width / 1px;
+                            viewbox-height: self.height / 1px;
+                            commands: t.commands;
+                            stroke: t.color;
+                            stroke-width: 1.25px;
+                        }
+
+                        // box & whisker
+                        for b in root.bars : Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width;
+                            height: parent.height;
+
+                            Rectangle {   // whisker
+                                x: b.x * 1px - 0.5px;
+                                y: b.y-hi * 1px;
+                                width: 1px;
+                                height: (b.y-lo - b.y-hi) * 1px;
+                                background: b.color;
+                            }
+                            Rectangle {   // top cap
+                                x: (b.x - b.w / 4) * 1px;
+                                y: b.y-hi * 1px;
+                                width: b.w / 2 * 1px;
+                                height: 1px;
+                                background: b.color;
+                            }
+                            Rectangle {   // bottom cap
+                                x: (b.x - b.w / 4) * 1px;
+                                y: b.y-lo * 1px;
+                                width: b.w / 2 * 1px;
+                                height: 1px;
+                                background: b.color;
+                            }
+                            Rectangle {   // body
+                                x: (b.x - b.w / 2) * 1px;
+                                y: Math.min(b.y-a, b.y-b) * 1px;
+                                width: b.w * 1px;
+                                height: Math.max(2, Math.abs(b.y-a - b.y-b)) * 1px;
+                                background: b.color.with-alpha(0.22);
+                                border-width: 1px;
+                                border-color: b.color;
+                            }
+                            Rectangle {   // median
+                                visible: b.y-mid >= 0;
+                                x: (b.x - b.w / 2) * 1px;
+                                y: b.y-mid * 1px;
+                                width: b.w * 1px;
+                                height: 2px;
+                                background: Theme.text;
+                            }
                             Text {
-                                text: "Only";
+                                visible: b.label != "";
+                                text: b.label;
+                                x: (b.x - b.w / 2) * 1px;
+                                y: parent.height - 16px;
+                                font-family: Theme.mono;
+                                font-size: 10px;
                                 color: Theme.muted;
-                                font-size: 11px;
-                                vertical-alignment: center;
-                            }
-                            for g in root.groups : Chip {
-                                text: g;
-                                clicked => { root.only-group(g); }
                             }
                         }
+                    }
 
-                        ListView {
-                            vertical-stretch: 1;
-                            for t in root.traces : Rectangle {
-                                height: 26px;
-                                border-radius: 4px;
-                                background: row-ta.has-hover
-                                    ? Theme.panel-2 : transparent;
+                    // time axis labels
+                    Text {
+                        text: "-\{root.window-s} s";
+                        x: plot.x;
+                        y: plot.y + plot.height + 5px;
+                        font-family: Theme.mono;
+                        font-size: 11px;
+                        color: Theme.muted;
+                    }
+                    Text {
+                        text: "now";
+                        x: plot.x + plot.width - 60px;
+                        y: plot.y + plot.height + 5px;
+                        width: 60px;
+                        horizontal-alignment: right;
+                        font-family: Theme.mono;
+                        font-size: 11px;
+                        color: Theme.muted;
+                    }
 
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-                                    spacing: 8px;
+                    // ---------- channel list ----------
+                    Rectangle {
+                        x: parent.width - root.side-w - 14px;
+                        y: 14px;
+                        width: root.side-w;
+                        height: parent.height - 28px;
+                        background: Theme.surface;
+                        border-width: 1px;
+                        border-color: Theme.line;
 
-                                    // the checkbox
-                                    VerticalLayout {
-                                        alignment: center;
-                                        width: 16px;
-                                        Rectangle {
-                                            width: 16px;
-                                            height: 16px;
-                                            border-radius: 3px;
-                                            border-width: 2px;
-                                            border-color: t.color;
-                                            background: t.visible
-                                                ? t.color : transparent;
-                                            Path {
-                                                visible: t.visible;
-                                                x: 0px;
-                                                y: 0px;
-                                                width: 12px;
-                                                height: 12px;
-                                                viewbox-width: 16;
-                                                viewbox-height: 16;
-                                                commands: "M 3 8 L 6.5 11.5 L 13 4.5";
-                                                stroke: #0b1220;
-                                                stroke-width: 2.5px;
-                                            }
-                                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 8px;
+
+                            HorizontalLayout {
+                                Text {
+                                    text: "CHANNELS";
+                                    color: Theme.muted;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    letter-spacing: 1.2px;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    text: "\{root.traces.length}";
+                                    color: Theme.muted;
+                                    font-family: Theme.mono;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+                                Chip { text: "all"; clicked => { root.show-all(); } }
+                                Chip { text: "none"; clicked => { root.hide-all(); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                alignment: start;
+                                for g in root.groups : Chip {
+                                    text: "only " + g;
+                                    clicked => { root.only-group(g); }
+                                }
+                            }
+
+                            ListView {
+                                vertical-stretch: 1;
+                                for t in root.traces : Rectangle {
+                                    height: 24px;
+                                    background: row-ta.has-hover
+                                        ? Theme.raised : transparent;
+
+                                    Rectangle {
+                                        x: 6px;
+                                        y: (parent.height - 12px) / 2;
+                                        width: 12px;
+                                        height: 12px;
+                                        border-radius: 2px;
+                                        border-width: 1px;
+                                        border-color: t.color;
+                                        background: t.visible
+                                            ? t.color : transparent;
                                     }
                                     Text {
-                                        text: t.name;
-                                        font-size: 13px;
+                                        x: 26px;
+                                        width: parent.width - 26px - 76px;
+                                        height: parent.height;
                                         vertical-alignment: center;
+                                        text: t.name;
+                                        font-family: Theme.mono;
+                                        font-size: 12px;
                                         overflow: elide;
                                         color: t.visible
                                             ? Theme.text : Theme.muted;
                                     }
-                                }
-                                row-ta := TouchArea {
-                                    mouse-cursor: MouseCursor.pointer;
-                                    clicked => { root.toggle-trace(t.name); }
+                                    Text {
+                                        x: parent.width - 78px;
+                                        width: 70px;
+                                        height: parent.height;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                        text: t.value;
+                                        font-family: Theme.mono;
+                                        font-size: 12px;
+                                        color: t.visible
+                                            ? t.color : Theme.muted;
+                                    }
+                                    row-ta := TouchArea {
+                                        mouse-cursor: MouseCursor.pointer;
+                                        clicked => { root.toggle-trace(t.name); }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // ================= footer =================
+        Rectangle {
+            height: 26px;
+            background: Theme.surface;
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.line;
+            }
+            Text {
+                x: 16px;
+                width: parent.width - 220px;
+                height: parent.height;
+                vertical-alignment: center;
+                text: root.status;
+                font-family: Theme.mono;
+                font-size: 11px;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                x: parent.width - 196px;
+                width: 180px;
+                height: parent.height;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                text: root.view-mode == 0
+                    ? "RAW STREAM" : "\{root.traces.length} CHANNELS";
+                font-family: Theme.mono;
+                font-size: 11px;
+                color: Theme.muted;
             }
         }
     }

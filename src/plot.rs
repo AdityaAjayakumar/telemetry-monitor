@@ -110,11 +110,17 @@ fn range_or_default(lo: f64, hi: f64) -> (f64, f64) {
 
 fn legend(list: &[(usize, &Series)], hidden: &HashSet<String>) -> Vec<Trace> {
     list.iter()
-        .map(|(i, s)| Trace {
+                .map(|(i, s)| Trace {
             name: s.name.clone().into(),
             color: color(*i),
             visible: !hidden.contains(&s.name),
             commands: Default::default(),
+            value: s
+                .pts
+                .back()
+                .map(|p| format!("{:.2}", p.1))
+                .unwrap_or_default()
+                .into(),
         })
         .collect()
 }
