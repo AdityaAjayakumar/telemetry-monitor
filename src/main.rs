@@ -26,6 +26,8 @@ struct App {
     stop: Option<Arc<AtomicBool>>,
     log_join: Option<std::thread::JoinHandle<()>>,
     presets: Vec<(String, String)>,
+    view: plot::View,
+    hover: Option<(f64, f64)>,
 }
 
 fn update<T: Clone + 'static>(m: &VecModel<T>, v: Vec<T>) {
@@ -36,6 +38,10 @@ fn update<T: Clone + 'static>(m: &VecModel<T>, v: Vec<T>) {
     } else {
         m.set_vec(v);
     }
+}
+
+fn strings(v: Vec<String>) -> Vec<SharedString> {
+    v.into_iter().map(SharedString::from).collect()
 }
 
 fn list_ports() -> Vec<SharedString> {
@@ -71,15 +77,28 @@ fn main() -> Result<(), slint::PlatformError> {
         stop: None,
         log_join: None,
         presets,
+        view: plot::View::default(),
+        hover: None,
     }));
 
+    // ---- models the UI binds to ----
     let lines = Rc::new(VecModel::<SharedString>::default());
     let traces = Rc::new(VecModel::<Trace>::default());
     let bars = Rc::new(VecModel::<Bar>::default());
+    let dots = Rc::new(VecModel::<Dot>::default());
+    let hover_dots = Rc::new(VecModel::<Dot>::default());
+    let readings = Rc::new(VecModel::<Reading>::default());
+    let x_ticks = Rc::new(VecModel::<SharedString>::default());
+    let y_ticks = Rc::new(VecModel::<SharedString>::default());
     let ports = Rc::new(VecModel::from(list_ports()));
     ui.set_lines(ModelRc::from(lines.clone()));
     ui.set_traces(ModelRc::from(traces.clone()));
     ui.set_bars(ModelRc::from(bars.clone()));
+    ui.set_dots(ModelRc::from(dots.clone()));
+    ui.set_hover_dots(ModelRc::from(hover_dots.clone()));
+    ui.set_readings(ModelRc::from(readings.clone()));
+    ui.set_x_ticks(ModelRc::from(x_ticks.clone()));
+    ui.set_y_ticks(ModelRc::from(y_ticks.clone()));
     ui.set_ports(ModelRc::from(ports.clone()));
     ui.set_preset_names(ModelRc::from(preset_names.clone()));
     ui.set_groups(ModelRc::from(groups.clone()));
@@ -169,12 +188,12 @@ fn main() -> Result<(), slint::PlatformError> {
                     *slot.lock().unwrap() = Some(tx);
                     app.borrow_mut().log_join = Some(jh);
                     if let Some(ui) = weak.upgrade() {
-                        ui.set_status(format!("Logging to {}", p.display()).into());
+                        ui.set_status(format!("Recording to {}", p.display()).into());
                     }
                 }
                 Err(e) => {
                     if let Some(ui) = weak.upgrade() {
-                        ui.set_status(format!("Log error: {e}").into());
+                        ui.set_status(format!("Could not record: {e}").into());
                     }
                 }
             }
@@ -184,10 +203,14 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_stop_log({
         let app = app.clone();
         let slot = log_slot.clone();
+        let weak = ui.as_weak();
         move || {
             *slot.lock().unwrap() = None; // drops Sender, logger flushes+exits
             if let Some(j) = app.borrow_mut().log_join.take() {
                 let _ = j.join();
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_status("Recording stopped".into());
+                }
             }
         }
     });
@@ -219,7 +242,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // ---- channel checklist callbacks ----
+    // ---- channel checklist ----
     ui.on_toggle_trace({
         let app = app.clone();
         move |name| {
@@ -268,8 +291,54 @@ fn main() -> Result<(), slint::PlatformError> {
         let app = app.clone();
         let lines = lines.clone();
         move || {
-            app.borrow_mut().store.clear();
-            lines.set_vec(vec![]);
+            let mut a = app.borrow_mut();
+            a.store.clear();
+            a.view.reset();
+            lines.set_vec(Vec::<SharedString>::new());
+        }
+    });
+
+    // ---- chart gestures ----
+    ui.on_plot_zoom({
+        let app = app.clone();
+        move |fx, fy, steps, ctrl| {
+            let mut a = app.borrow_mut();
+            let steps = (steps as f64).clamp(-4.0, 4.0);
+            if ctrl {
+                a.view.zoom_y(fy as f64, steps);
+            } else {
+                a.view.zoom_x(fx as f64, steps);
+            }
+        }
+    });
+
+    ui.on_plot_pan({
+        let app = app.clone();
+        move |dxf, dyf| {
+            let mut a = app.borrow_mut();
+            a.view.pan_x(dxf as f64);
+            a.view.pan_y(dyf as f64);
+        }
+    });
+
+    ui.on_auto_fit({
+        let app = app.clone();
+        move || {
+            app.borrow_mut().view.reset();
+        }
+    });
+
+    ui.on_plot_hover({
+        let app = app.clone();
+        move |fx, fy| {
+            app.borrow_mut().hover = Some((fx as f64, fy as f64));
+        }
+    });
+
+    ui.on_plot_leave({
+        let app = app.clone();
+        move || {
+            app.borrow_mut().hover = None;
         }
     });
 
@@ -308,7 +377,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     );
                     *shared.write().unwrap() = p;
                 }
-                Err(e) => ui.set_status(format!("Preset error: {e}").into()),
+                Err(e) => ui.set_status(format!("Preset problem: {e}").into()),
             }
         }
     });
@@ -322,10 +391,10 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut a = app.borrow_mut();
             a.store.clear();
             a.hidden.clear();
-            groups.set_vec(vec![]);
+            groups.set_vec(Vec::<SharedString>::new());
             *shared.write().unwrap() = preset::Preset::default();
             if let Some(ui) = weak.upgrade() {
-                ui.set_status("Free mode: all channels accepted".into());
+                ui.set_status("No preset: every channel is accepted".into());
             }
         }
     });
@@ -338,11 +407,11 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = weak.upgrade() else { return };
             let name = name.trim().replace('=', "");
             if name.is_empty() {
-                ui.set_status("Enter a preset name first".into());
+                ui.set_status("Type a name for the preset first".into());
                 return;
             }
             if let Err(e) = preset::Preset::parse(spec.as_str(), false) {
-                ui.set_status(format!("Preset error: {e}").into());
+                ui.set_status(format!("Preset problem: {e}").into());
                 return;
             }
             let mut a = app.borrow_mut();
@@ -367,7 +436,8 @@ fn main() -> Result<(), slint::PlatformError> {
             preset_names.set_vec(names_of(&a.presets));
         }
     });
-        ui.on_detect_preset({
+
+    ui.on_detect_preset({
         let app = app.clone();
         let shared = shared_preset.clone();
         let groups = groups.clone();
@@ -382,7 +452,7 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             *shared.write().unwrap() = preset::Preset::default();
             groups.set_vec(Vec::<SharedString>::new());
-            ui.set_status("Learning channels from live data (4 s)...".into());
+            ui.set_status("Learning channels from live data for 4 seconds".into());
 
             // after 4 seconds, build the preset from what arrived
             Timer::single_shot(Duration::from_secs(4), {
@@ -403,7 +473,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     let spec = preset::spec_from_names(&names);
                     if spec.is_empty() {
                         ui.set_status(
-                            "Nothing detected: connect first and make sure data is flowing"
+                            "Nothing learned: connect first and make sure data is flowing"
                                 .into(),
                         );
                         return;
@@ -418,32 +488,52 @@ fn main() -> Result<(), slint::PlatformError> {
                             groups.set_vec(g);
                             *shared.write().unwrap() = p;
                             ui.set_preset_spec(spec.clone().into());
-                            ui.set_status(format!("Detected: {spec}").into());
+                            ui.set_status(format!("Learned: {spec}").into());
                         }
-                        Err(e) => ui.set_status(format!("Detect failed: {e}").into()),
+                        Err(e) => ui.set_status(format!("Could not learn: {e}").into()),
                     }
                 }
             });
         }
     });
 
-    // ---- 30 Hz UI tick: drain -> store -> redraw ----
+    // ---- 30 Hz tick: drain -> store -> redraw ----
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(33), {
         let app = app.clone();
         let weak = ui.as_weak();
+        let mut last_rx = Instant::now()
+            .checked_sub(Duration::from_secs(10))
+            .unwrap_or_else(Instant::now);
+        let mut rate_n: usize = 0;
+        let mut rate_t = Instant::now();
         move || {
             let Some(ui) = weak.upgrade() else { return };
             let mut a = app.borrow_mut();
             let mode = ui.get_view_mode();
 
             let mut fresh: Vec<SharedString> = Vec::new();
+            let mut got = 0usize;
             for _ in 0..50_000 {
                 let Ok(s) = data_rx.try_recv() else { break };
                 a.store.push(&s);
+                got += 1;
                 if mode == 0 {
                     fresh.push(format!("{:9.3}  {}", s.t, s.raw).into());
                 }
+            }
+
+            // live indicator and lines per second
+            if got > 0 {
+                last_rx = Instant::now();
+                rate_n += got;
+            }
+            ui.set_receiving(last_rx.elapsed() < Duration::from_millis(1500));
+            if rate_t.elapsed() >= Duration::from_secs(1) {
+                let per = rate_n as f64 / rate_t.elapsed().as_secs_f64();
+                ui.set_rate(format!("{per:.0} lines/s").into());
+                rate_n = 0;
+                rate_t = Instant::now();
             }
 
             if mode == 0 {
@@ -460,17 +550,45 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            // everything is plotted; hide channels with the side checklist
-            let win = ui.get_window_s().max(1) as f64;
+            // ---- chart ----
             let (w, h) = (ui.get_plot_w(), ui.get_plot_h());
-            let f = match mode {
-                1 => plot::lines(&a.store, &a.hidden, win, w, h),
-                _ => plot::boxes(&a.store, &a.hidden, win, w, h),
+            let (d0, d1) = plot::data_range(&a.store, &a.hidden);
+            let (t0, t1) = a.view.resolve_x(d0, d1);
+            let y_manual = a.view.y_manual;
+            let f = if mode == 1 {
+                plot::lines(&a.store, &a.hidden, t0, t1, d1, y_manual, w, h)
+            } else {
+                plot::boxes(&a.store, &a.hidden, t0, t1, d1, y_manual, w, h)
             };
+            a.view.record(&f, d0, d1);
+
             update(&traces, f.traces);
             update(&bars, f.bars);
-            ui.set_y_top(f.y_top.into());
-            ui.set_y_bot(f.y_bot.into());
+            update(&dots, f.dots);
+            update(&x_ticks, strings(f.x_ticks));
+            update(&y_ticks, strings(f.y_ticks));
+            ui.set_view_label(a.view.label().into());
+            ui.set_is_auto(a.view.is_auto());
+
+            // values under the pointer, kept live while the pointer rests
+            match a.hover {
+                Some((fx, fy)) => {
+                    let hv = plot::hover(&a.store, &a.hidden, &a.view, fx, fy, w, h, mode == 1);
+                    update(&readings, hv.readings);
+                    update(&hover_dots, hv.dots);
+                    ui.set_readings_more(hv.more.into());
+                    ui.set_pointer_time(hv.time.into());
+                    ui.set_pointer_val(hv.value.into());
+                }
+                None => {
+                    if readings.row_count() > 0 {
+                        readings.set_vec(Vec::<Reading>::new());
+                    }
+                    if hover_dots.row_count() > 0 {
+                        hover_dots.set_vec(Vec::<Dot>::new());
+                    }
+                }
+            }
         }
     });
 

@@ -66,11 +66,4 @@ impl Store {
             sr.pts.push_back((s.t, *v));
         }
     }
-
-    pub fn t_max(&self) -> f64 {
-        self.series
-            .iter()
-            .filter_map(|s| s.pts.back().map(|p| p.0))
-            .fold(0.0, f64::max)
-    }
 }
